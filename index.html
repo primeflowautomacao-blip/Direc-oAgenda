@@ -1450,7 +1450,22 @@ function openGoalModal(record, parentId, onSaved){
    ============================================================ */
 const TIME_ACTIVITIES = ['Inglês','Bíblia','Oração','Leitura','Programação','Trabalho','Exercício','Outro'];
 VIEW_RENDERERS.tempo = async (wrap)=>{
-  let [logs, goals] = await Promise.all([dbList('time_logs', {order:'log_date', asc:false, limit:200}), dbList('goals')]);
+  let [logs, goals] = await Promise.all([dbList('time_logs', {order:'log_date', asc:false, limit:2000}), dbList('goals')]);
+  function drawTotals(){
+    const el = document.getElementById('time-totals');
+    if(!el) return;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const todayS = isoDay(today);
+    const weekS = isoDay(startOfWeek(today));
+    const weekE = isoDay(addDays(startOfWeek(today),6));
+    const monthS = isoDay(new Date(today.getFullYear(), today.getMonth(), 1));
+    const monthE = isoDay(new Date(today.getFullYear(), today.getMonth()+1, 0));
+    const sum = (from, to)=> logs.filter(l=>l.log_date>=from && l.log_date<=to).reduce((s,l)=>s+(l.duration_minutes||0),0);
+    el.innerHTML = `
+      <div class="card stat-card"><div class="lbl">${icon('clock',14)} Hoje</div><div class="val">${fmtDuration(sum(todayS,todayS))}</div></div>
+      <div class="card stat-card"><div class="lbl">${icon('clock',14)} Esta semana</div><div class="val">${fmtDuration(sum(weekS,weekE))}</div></div>
+      <div class="card stat-card"><div class="lbl">${icon('clock',14)} Este mês</div><div class="val">${fmtDuration(sum(monthS,monthE))}</div></div>`;
+  }
   function draw(){
     const q = (document.getElementById('tb-search')?.value||'').toLowerCase();
     let list = logs;
@@ -1461,8 +1476,9 @@ VIEW_RENDERERS.tempo = async (wrap)=>{
       const rec = logs.find(l=>l.id===el.dataset.tlog);
       openTimeLogModal(rec, {}, refresh);
     }));
+    drawTotals();
   }
-  async function refresh(){ [logs, goals] = await Promise.all([dbList('time_logs', {order:'log_date', asc:false, limit:200}), dbList('goals')]); draw(); renderTimerCard(); }
+  async function refresh(){ [logs, goals] = await Promise.all([dbList('time_logs', {order:'log_date', asc:false, limit:2000}), dbList('goals')]); draw(); renderTimerCard(); }
   function renderTimerCard(){
     const c = document.getElementById('timer-card');
     if(!c) return;
@@ -1500,6 +1516,7 @@ VIEW_RENDERERS.tempo = async (wrap)=>{
     <div class="view-head"><div><div class="view-eyebrow">Crescimento</div><h1 class="view-title">Controlo de tempo</h1><div class="view-sub">Registo manual (principal) ou cronómetro — a tua escolha.</div></div>
       <button class="btn btn-primary" id="new-tlog">${icon('plus',15)} Registar tempo</button></div>
     <div class="card" id="timer-card" style="margin-bottom:26px"></div>
+    <div class="grid grid-3" id="time-totals" style="margin-bottom:26px"></div>
     ${toolbarHtml({searchPlaceholder:'Pesquisar registos de tempo...'})}
     <div class="list" id="tempo-list"></div>`;
   renderTimerCard();
