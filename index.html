@@ -1450,7 +1450,18 @@ function openGoalModal(record, parentId, onSaved){
    ============================================================ */
 const TIME_ACTIVITIES = ['Inglês','Bíblia','Oração','Leitura','Programação','Trabalho','Exercício','Outro'];
 VIEW_RENDERERS.tempo = async (wrap)=>{
-  let [logs, goals] = await Promise.all([dbList('time_logs', {order:'log_date', asc:false, limit:2000}), dbList('goals')]);
+  let [logs, goals, activityTargets] = await Promise.all([dbList('time_logs', {order:'log_date', asc:false, limit:2000}), dbList('goals'), dbList('activity_targets')]);
+  function drawTargets(){
+    const el = document.getElementById('atarget-body');
+    if(!el) return;
+    el.innerHTML = activityTargets.length? activityTargets.map(t=>activityTargetCard(t, logs)).join('') :
+      `<div class="empty-state" style="padding:20px">${icon('target',30)}<h3>Sem metas definidas</h3><p>Define uma meta semanal ou mensal para acompanhar o teu progresso em cada atividade.</p></div>`;
+    el.querySelectorAll('[data-edit-atarget]').forEach(btn=>btn.onclick=()=>{
+      const t = activityTargets.find(x=>x.id===btn.dataset.editAtarget);
+      openActivityTargetModal(t.activity, t, refreshTargets);
+    });
+  }
+  async function refreshTargets(){ activityTargets = await dbList('activity_targets'); drawTargets(); }
   function drawTotals(){
     const el = document.getElementById('time-totals');
     if(!el) return;
@@ -1478,7 +1489,7 @@ VIEW_RENDERERS.tempo = async (wrap)=>{
     }));
     drawTotals();
   }
-  async function refresh(){ [logs, goals] = await Promise.all([dbList('time_logs', {order:'log_date', asc:false, limit:2000}), dbList('goals')]); draw(); renderTimerCard(); }
+  async function refresh(){ [logs, goals] = await Promise.all([dbList('time_logs', {order:'log_date', asc:false, limit:2000}), dbList('goals')]); draw(); renderTimerCard(); drawTargets(); }
   function renderTimerCard(){
     const c = document.getElementById('timer-card');
     if(!c) return;
@@ -1517,12 +1528,22 @@ VIEW_RENDERERS.tempo = async (wrap)=>{
       <button class="btn btn-primary" id="new-tlog">${icon('plus',15)} Registar tempo</button></div>
     <div class="card" id="timer-card" style="margin-bottom:26px"></div>
     <div class="grid grid-3" id="time-totals" style="margin-bottom:26px"></div>
+    <div class="view-head" style="margin-bottom:14px"><h2 style="font-size:17px; font-weight:600">Metas por atividade</h2>
+      <button class="btn btn-ghost btn-sm" id="new-atarget">${icon('plus',13)} Nova meta</button></div>
+    <div id="atarget-body" style="margin-bottom:26px"></div>
     ${toolbarHtml({searchPlaceholder:'Pesquisar registos de tempo...'})}
     <div class="list" id="tempo-list"></div>`;
   renderTimerCard();
   draw();
+  drawTargets();
   document.getElementById('tb-search').addEventListener('input', draw);
   document.getElementById('new-tlog').onclick = ()=>openTimeLogModal(null, {}, refresh);
+  document.getElementById('new-atarget').onclick = ()=>{
+    const configured = new Set(activityTargets.map(t=>t.activity));
+    const available = TIME_ACTIVITIES.filter(a=>!configured.has(a));
+    if(!available.length){ toast('Já definiste metas para todas as atividades.', 'err'); return; }
+    openActivityPicker(available, (activity)=> openActivityTargetModal(activity, null, refreshTargets));
+  };
 };
 function fmtTimer(sec){ const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60; return [h,m,s].map(n=>String(n).padStart(2,'0')).join(':'); }
 function timeLogRow(t){
@@ -1571,6 +1592,94 @@ async function openTimeLogModal(record, opts={}, onSaved){
       c.classList.add('active'); document.getElementById('f_subcategory').value = c.dataset.sub;
     });
   },0);
+}
+
+/* ============================================================
+   METAS POR ATIVIDADE  (semanais/mensais, facultativas)
+   ============================================================ */
+function sumRange(logs, activity, fromISO, toISO){
+  const f = logs.filter(l=>l.activity===activity && l.log_date>=fromISO && l.log_date<=toISO);
+  return {minutes: f.reduce((s,l)=>s+(l.duration_minutes||0),0), count: f.length};
+}
+function targetProgress(mode, target, stats){
+  if(!mode || !target) return null;
+  if(mode==='tempo'){
+    const need = target*60;
+    return {pct: need>0? Math.min(100, stats.minutes/need*100):0, haveLabel: fmtDuration(stats.minutes), needLabel: fmtDuration(need), met: stats.minutes>=need};
+  }
+  return {pct: target>0? Math.min(100, stats.count/target*100):0, haveLabel: `${stats.count}x`, needLabel: `${target}x`, met: stats.count>=target};
+}
+function startOfPeriod(d, unit){ return unit==='week'? startOfWeek(d) : new Date(d.getFullYear(), d.getMonth(), 1); }
+function endOfPeriod(start, unit){ return unit==='week'? addDays(start,6) : new Date(start.getFullYear(), start.getMonth()+1, 0); }
+function nextPeriod(start, unit){ return unit==='week'? addDays(start,7) : new Date(start.getFullYear(), start.getMonth()+1, 1); }
+function periodsHistory(activity, mode, target, logs, createdAt, unit){
+  if(!mode || !target) return null;
+  const created = new Date(createdAt); created.setHours(0,0,0,0);
+  let cursor = startOfPeriod(created, unit);
+  const currentStart = startOfPeriod(new Date(), unit);
+  let total=0, met=0;
+  while(cursor < currentStart){
+    const end = endOfPeriod(cursor, unit);
+    const stats = sumRange(logs, activity, isoDay(cursor), isoDay(end));
+    const ok = mode==='tempo'? stats.minutes >= target*60 : stats.count >= target;
+    if(ok) met++;
+    total++;
+    cursor = nextPeriod(cursor, unit);
+  }
+  return {met, total};
+}
+function activityTargetCard(t, logs){
+  const today = new Date();
+  const weekStats = t.weekly_mode? targetProgress(t.weekly_mode, t.weekly_target, sumRange(logs, t.activity, isoDay(startOfWeek(today)), isoDay(addDays(startOfWeek(today),6)))) : null;
+  const monthStats = t.monthly_mode? targetProgress(t.monthly_mode, t.monthly_target, sumRange(logs, t.activity, isoDay(new Date(today.getFullYear(),today.getMonth(),1)), isoDay(new Date(today.getFullYear(),today.getMonth()+1,0)))) : null;
+  const weekHist = t.weekly_mode? periodsHistory(t.activity, t.weekly_mode, t.weekly_target, logs, t.created_at, 'week') : null;
+  const monthHist = t.monthly_mode? periodsHistory(t.activity, t.monthly_mode, t.monthly_target, logs, t.created_at, 'month') : null;
+  return `<div class="card" style="padding:16px; margin-bottom:12px">
+    <div class="flex" style="justify-content:space-between; align-items:center; margin-bottom:12px">
+      <div style="font-weight:600">${esc(t.activity)}</div>
+      <button class="btn btn-ghost btn-sm" data-edit-atarget="${t.id}">${icon('edit',13)} Editar</button>
+    </div>
+    ${weekStats? `<div style="margin-bottom:${monthStats?'14px':'0'}">
+      <div class="flex" style="justify-content:space-between; font-size:13px; color:var(--text-dim); margin-bottom:6px"><span>Meta semanal</span><span class="mono">${weekStats.haveLabel} / ${weekStats.needLabel}</span></div>
+      <div class="progress-track"><div class="progress-fill" style="width:${weekStats.pct}%"></div></div>
+      <div class="text-faint text-sm" style="margin-top:6px">${weekHist.total? `Cumpriste ${weekHist.met} de ${weekHist.total} semana(s) anteriores` : 'Ainda sem semanas completas'}</div>
+    </div>` : ''}
+    ${monthStats? `<div>
+      <div class="flex" style="justify-content:space-between; font-size:13px; color:var(--text-dim); margin-bottom:6px"><span>Meta mensal</span><span class="mono">${monthStats.haveLabel} / ${monthStats.needLabel}</span></div>
+      <div class="progress-track"><div class="progress-fill sky" style="width:${monthStats.pct}%"></div></div>
+      <div class="text-faint text-sm" style="margin-top:6px">${monthHist.total? `Cumpriste ${monthHist.met} de ${monthHist.total} mês(es) anteriores` : 'Ainda sem meses completos'}</div>
+    </div>` : ''}
+  </div>`;
+}
+function openActivityTargetModal(activityName, existing, onSaved){
+  formModal({
+    title: existing? `Editar meta — ${activityName}` : `Nova meta — ${activityName}`,
+    table:'activity_targets', record: existing,
+    fields:[
+      {key:'weekly_mode', label:'Meta semanal', type:'select', options:[{value:'',label:'— nenhuma —'},{value:'tempo',label:'Tempo (horas)'},{value:'vezes',label:'Nº de vezes'}], default: existing?.weekly_mode||''},
+      {key:'weekly_target', label:'Valor semanal', type:'number', default: existing?.weekly_target??''},
+      {key:'monthly_mode', label:'Meta mensal', type:'select', options:[{value:'',label:'— nenhuma —'},{value:'tempo',label:'Tempo (horas)'},{value:'vezes',label:'Nº de vezes'}], default: existing?.monthly_mode||''},
+      {key:'monthly_target', label:'Valor mensal', type:'number', default: existing?.monthly_target??''},
+    ],
+    beforeSave:(p)=>{
+      p.activity = activityName;
+      p.weekly_mode = p.weekly_mode || null;
+      p.weekly_target = p.weekly_mode? p.weekly_target : null;
+      p.monthly_mode = p.monthly_mode || null;
+      p.monthly_target = p.monthly_mode? p.monthly_target : null;
+      p.updated_at = new Date().toISOString();
+      return p;
+    },
+    afterSave: onSaved,
+  });
+}
+function openActivityPicker(available, onPick){
+  const bodyHtml = `<div class="list">${available.map(a=>`<div class="row-item card-hover" data-pick="${esc(a)}"><div class="ri-main"><div class="ri-title">${esc(a)}</div></div>${icon('chevronRight',15)}</div>`).join('')}</div>`;
+  openModal({
+    title:'Escolhe a atividade',
+    bodyHtml,
+    onMount:(box)=>{ box.querySelectorAll('[data-pick]').forEach(el=>el.onclick=()=>{ closeModal(); onPick(el.dataset.pick); }); },
+  });
 }
 
 /* ============================================================
@@ -2095,7 +2204,7 @@ function norteField(key, label, val){
 /* ============================================================
    CONFIGURAÇÕES
    ============================================================ */
-const ALL_TABLES = ['journal_entries','quick_notes','private_logs','decisions','goals','time_logs','tasks','events','prayers','bible_studies','gratitude_entries','habits','habit_logs','weekly_reviews','monthly_reviews','meu_norte'];
+const ALL_TABLES = ['journal_entries','quick_notes','private_logs','decisions','goals','time_logs','tasks','events','prayers','bible_studies','gratitude_entries','habits','habit_logs','weekly_reviews','monthly_reviews','meu_norte','activity_targets'];
 VIEW_RENDERERS.config = async (wrap)=>{
   wrap.innerHTML = `
     <div class="view-head"><div><div class="view-eyebrow">Sistema</div><h1 class="view-title">Configurações</h1></div></div>
