@@ -1223,10 +1223,10 @@ function openTopicEntryModal(record, topicId, onSaved){
   formModal({
     title: record? 'Editar entrada' : 'Nova entrada no tópico',
     table:'topic_entries',
-    record: record ? {...record} : {topic_id:topicId, entry_date:todayISO()},
+    record: record || null,
     fields:[
       {key:'text', label:'Escreve aqui', type:'textarea', full:true, placeholder:'O que está a pensar ou a observar sobre este tópico...'},
-      {key:'entry_date', label:'Data', type:'date', default:todayISO()},
+      {key:'entry_date', label:'Data', type:'date', default: record?.entry_date || todayISO()},
     ],
     beforeSave:(p)=>{
       if(!record) p.topic_id = topicId;
