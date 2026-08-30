@@ -1160,7 +1160,8 @@ VIEW_RENDERERS.diario = async (wrap)=>{
   
   document.getElementById('new-entry').onclick = ()=>{
     if(!activeTopic) { toast('Seleccione ou crie um tópico primeiro'); return; }
-    openTopicEntryModal(null, activeTopic, async ()=>{
+    const currentTopic = topics.find(t=>t.id===activeTopic);
+    openTopicEntryModal(null, currentTopic, async ()=>{
       topicEntries = await dbList('topic_entries', {order:'entry_date', asc:false});
       draw();
     });
@@ -1179,7 +1180,8 @@ VIEW_RENDERERS.diario = async (wrap)=>{
     wrap.querySelectorAll('[data-tentry]').forEach(el=>{
       el.onclick = ()=>{
         const rec = topicEntries.find(e=>e.id===el.dataset.tentry);
-        openTopicEntryModal(rec, activeTopic, async ()=>{
+        const currentTopic = topics.find(t=>t.id===rec.topic_id);
+        openTopicEntryModal(rec, currentTopic, async ()=>{
           topicEntries = await dbList('topic_entries', {order:'entry_date', asc:false});
           draw();
         });
@@ -1219,17 +1221,23 @@ function openTopicModal(record, onSaved){
   });
 }
 
-function openTopicEntryModal(record, topicId, onSaved){
+function openTopicEntryModal(record, topic, onSaved){
+  const headerHtml = topic ? `<div style="padding:16px; background-color:${topic.color}22; border-left:4px solid ${topic.color}; margin-bottom:20px; border-radius:8px">
+    <div style="font-size:13px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.05em">Tópico</div>
+    <div style="font-size:18px; font-weight:600; color:${topic.color}; margin-top:4px">${topic.icon?icon(topic.icon,18)+' ':''}${esc(topic.name)}</div>
+  </div>` : '';
+  
   formModal({
     title: record? 'Editar entrada' : 'Nova entrada no tópico',
     table:'topic_entries',
     record: record || null,
+    extraHtmlTop: headerHtml,
     fields:[
       {key:'text', label:'Escreve aqui', type:'textarea', full:true, placeholder:'O que está a pensar ou a observar sobre este tópico...'},
       {key:'entry_date', label:'Data', type:'date', default: record?.entry_date || todayISO()},
     ],
     beforeSave:(p)=>{
-      if(!record) p.topic_id = topicId;
+      if(!record) p.topic_id = topic.id;
       p.updated_at = new Date().toISOString();
       return p;
     },
