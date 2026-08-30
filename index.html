@@ -945,10 +945,10 @@ function toolbarHtml({searchPlaceholder='Pesquisar...', chips=[]}={}){
 VIEW_RENDERERS.dashboard = async (wrap)=>{
   const today = todayISO();
   const [tasks, timeLogsToday, goals, events, habits, habitLogsToday, prayers, bible] = await Promise.all([
-    dbList('tasks', {order:'due_date', asc:true}),
+    dbList('tasks', {order:'updated_at', asc:false}),
     dbList('time_logs', {filters:[{op:'eq', col:'log_date', val:today}]}),
     dbList('goals', {filters:[{op:'eq', col:'status', val:'ativo'}]}),
-    dbList('events', {filters:[{op:'gte', col:'event_date', val:today}], order:'event_date', asc:true, limit:5}),
+    dbList('events', {filters:[{op:'gte', col:'event_date', val:today}], order:'event_date', asc:false, limit:5}),
     dbList('habits', {filters:[{op:'eq', col:'active', val:true}]}),
     dbList('habit_logs', {filters:[{op:'eq', col:'log_date', val:today}]}),
     dbList('prayers', {filters:[{op:'eq', col:'prayer_date', val:today}]}),
@@ -1144,7 +1144,7 @@ VIEW_RENDERERS.diario = async (wrap)=>{
       <div style="display:flex; gap:8px">
         <button class="btn btn-primary" id="new-topic">${icon('plus',15)} Novo tópico</button>
         <button class="btn btn-primary" id="new-entry">${icon('plus',15)} Nova entrada</button>
-        <button class="btn" id="reading-btn" style="display:flex">${icon('book',15)} Modo leitura</button>
+        <button class="btn" id="reading-btn" style="display:none">${icon('book',15)} Modo leitura</button>
       </div>
     </div>
     ${toolbarHtml({searchPlaceholder:'Pesquisar neste tópico...'})}
@@ -1156,20 +1156,12 @@ VIEW_RENDERERS.diario = async (wrap)=>{
   
   function updateReadingButton(){
     const readBtn = document.getElementById('reading-btn');
-    if(!readBtn) return;
-    
     const currentTopic = topics.find(t=>t.id===activeTopic);
-    if(!currentTopic) return;
-    
-    // Sempre mostrar o botão, independentemente de haver entradas
-    const topicEntriesForCurrentTopic = topicEntries.filter(e=>parseInt(e.topic_id)===parseInt(activeTopic));
-    readBtn.onclick = ()=>{
-      if(!topicEntriesForCurrentTopic.length){
-        toast('Sem entradas neste tópico');
-        return;
-      }
-      openReadingMode(currentTopic, topicEntriesForCurrentTopic);
-    };
+    const topicHasEntries = topicEntries.some(e=>e.topic_id===activeTopic);
+    if(readBtn) {
+      readBtn.style.display = topicHasEntries ? 'flex' : 'none';
+      readBtn.onclick = ()=>openReadingMode(currentTopic, topicEntries);
+    }
   }
   
   draw();
@@ -1201,10 +1193,7 @@ VIEW_RENDERERS.diario = async (wrap)=>{
     }, topics);
   };
   
-  document.getElementById('tb-search').addEventListener('input', ()=>{
-    draw();
-    updateReadingButton();
-  });
+  document.getElementById('tb-search').addEventListener('input', draw);
   
   document.querySelectorAll('#topic-chips .chip').forEach(c=>{
     c.onclick = ()=>{
@@ -1300,8 +1289,8 @@ function openTopicEntryModal(record, topic, onSaved, allTopics=[]){
   });
 }
 
-function openReadingMode(topic, topicEntries){
-  const entries = topicEntries.filter(e=>parseInt(e.topic_id)===parseInt(topic.id)).sort((a,b)=>new Date(a.entry_date)-new Date(b.entry_date));
+function openReadingMode(topic, allEntries){
+  const entries = allEntries.filter(e=>e.topic_id===topic.id).sort((a,b)=>new Date(a.entry_date)-new Date(b.entry_date));
   if(!entries.length) { toast('Sem entradas neste tópico'); return; }
   
   let currentIdx = 0;
@@ -1558,7 +1547,7 @@ function goalDisplay(g, acc){
   return {have:`${fmtPct(acc)} ${g.unit}`, total:`${fmtPct(g.target)} ${g.unit}`, pct: g.target>0? Math.min(100, acc/g.target*100):0};
 }
 VIEW_RENDERERS.metas = async (wrap)=>{
-  let [goals, logs] = await Promise.all([dbList('goals', {order:'created_at', asc:true}), dbList('time_logs')]);
+  let [goals, logs] = await Promise.all([dbList('goals', {order:'updated_at', asc:false}), dbList('time_logs')]);
   function draw(){
     const top = goals.filter(g=>!g.parent_id);
     document.getElementById('metas-list').innerHTML = top.length? `<div class="grid grid-2">${top.map(g=>goalCard(g, goals, logs)).join('')}</div>` :
@@ -1568,7 +1557,7 @@ VIEW_RENDERERS.metas = async (wrap)=>{
       openGoalDetail(goals.find(g=>g.id===el.dataset.goalOpen), goals, logs, refresh);
     }));
   }
-  async function refresh(){ [goals, logs] = await Promise.all([dbList('goals', {order:'created_at', asc:true}), dbList('time_logs')]); draw(); }
+  async function refresh(){ [goals, logs] = await Promise.all([dbList('goals', {order:'updated_at', asc:false}), dbList('time_logs')]); draw(); }
   wrap.innerHTML = `
     <div class="view-head"><div><div class="view-eyebrow">Crescimento</div><h1 class="view-title">Metas</h1><div class="view-sub">Progresso acumulado, médias e percentagem — tudo calculado automaticamente.</div></div>
       <button class="btn btn-primary" id="new-goal">${icon('plus',15)} Nova meta</button></div>
@@ -1911,7 +1900,7 @@ VIEW_RENDERERS.estudos = async (wrap)=>{
    TAREFAS
    ============================================================ */
 VIEW_RENDERERS.tarefas = async (wrap)=>{
-  let tasks = await dbList('tasks', {order:'due_date', asc:true});
+  let tasks = await dbList('tasks', {order:'updated_at', asc:false});
   let tab = 'hoje';
   function filtered(){
     const today = todayISO();
@@ -1927,7 +1916,7 @@ VIEW_RENDERERS.tarefas = async (wrap)=>{
     bindTaskRows(wrap);
     wrap.querySelectorAll('[data-check-task]').forEach(cb=>cb.addEventListener('change', async()=>{
       await dbUpdate('tasks', cb.dataset.checkTask, {status:cb.checked?'concluida':'pendente', updated_at:new Date().toISOString()});
-      tasks = await dbList('tasks', {order:'due_date', asc:true}); draw();
+      tasks = await dbList('tasks', {order:'updated_at', asc:false}); draw();
     }));
   }
   wrap.innerHTML = `
@@ -1940,7 +1929,7 @@ VIEW_RENDERERS.tarefas = async (wrap)=>{
     <div class="list" id="task-list"></div>`;
   draw();
   wrap.querySelectorAll('#task-tabs .chip').forEach(c=>c.onclick=()=>{ wrap.querySelectorAll('#task-tabs .chip').forEach(x=>x.classList.remove('active')); c.classList.add('active'); tab=c.dataset.t; draw(); });
-  document.getElementById('new-task').onclick = ()=>openTaskModal(null, async()=>{ tasks = await dbList('tasks',{order:'due_date',asc:true}); draw(); });
+  document.getElementById('new-task').onclick = ()=>openTaskModal(null, async()=>{ tasks = await dbList('tasks',{order:'updated_at',asc:false}); draw(); });
 };
 function openTaskModal(record, onSaved){
   formModal({
@@ -1964,7 +1953,7 @@ function openTaskModal(record, onSaved){
    AGENDA
    ============================================================ */
 VIEW_RENDERERS.agenda = async (wrap)=>{
-  let events = await dbList('events', {order:'event_date', asc:true});
+  let events = await dbList('events', {order:'event_date', asc:false});
   let mode = 'semana';
   function rangeFor(mode){
     const today = new Date(); today.setHours(0,0,0,0);
@@ -1986,7 +1975,7 @@ VIEW_RENDERERS.agenda = async (wrap)=>{
       openEventModal(events.find(ev=>ev.id===el.dataset.ev), refresh);
     }));
   }
-  async function refresh(){ events = await dbList('events', {order:'event_date', asc:true}); draw(); }
+  async function refresh(){ events = await dbList('events', {order:'event_date', asc:false}); draw(); }
   wrap.innerHTML = `
     <div class="view-head"><div><div class="view-eyebrow">Organização</div><h1 class="view-title">Agenda</h1></div>
       <button class="btn btn-primary" id="new-event">${icon('plus',15)} Novo evento</button></div>
@@ -2111,8 +2100,8 @@ function openGratitudeModal(record, onSaved){
    HÁBITOS
    ============================================================ */
 VIEW_RENDERERS.habitos = async (wrap)=>{
-  let [habits, logs] = await Promise.all([dbList('habits', {order:'created_at', asc:true}), dbList('habit_logs')]);
-  async function refresh(){ [habits, logs] = await Promise.all([dbList('habits',{order:'created_at',asc:true}), dbList('habit_logs')]); draw(); }
+  let [habits, logs] = await Promise.all([dbList('habits', {order:'updated_at', asc:false}), dbList('habit_logs')]);
+  async function refresh(){ [habits, logs] = await Promise.all([dbList('habits',{order:'updated_at',asc:false}), dbList('habit_logs')]); draw(); }
   function draw(){
     document.getElementById('habit-grid').innerHTML = habits.length? habits.map(h=>habitCard(h, logs)).join('') :
       `<div class="empty-state">${icon('flame',36)}<h3>Sem hábitos ainda</h3><p>Cria um hábito, ex: "Orar", "Ler", "Inglês".</p></div>`;
