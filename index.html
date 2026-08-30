@@ -1183,14 +1183,14 @@ VIEW_RENDERERS.diario = async (wrap)=>{
     if(!activeTopic && topics.length > 0) {
       activeTopic = topics[0].id;
     }
-    if(!activeTopic) { toast('Seleccione ou crie um tópico primeiro'); return; }
-    const currentTopic = topics.find(t=>t.id===activeTopic);
+    if(!topics.length) { toast('Crie um tópico primeiro'); return; }
+    const currentTopic = activeTopic ? topics.find(t=>t.id===activeTopic) : null;
     openTopicEntryModal(null, currentTopic, async ()=>{
       topicEntries = await dbList('topic_entries', {order:'entry_date', asc:false});
       topicEntries = topicEntries.map(e=>({...e, id: parseInt(e.id), topic_id: parseInt(e.topic_id)}));
       draw();
       updateReadingButton();
-    });
+    }, topics);
   };
   
   document.getElementById('tb-search').addEventListener('input', draw);
@@ -1249,23 +1249,39 @@ function openTopicModal(record, onSaved){
   });
 }
 
-function openTopicEntryModal(record, topic, onSaved){
-  const headerHtml = topic ? `<div style="padding:16px; background-color:${topic.color}22; border-left:4px solid ${topic.color}; margin-bottom:20px; border-radius:8px">
+function openTopicEntryModal(record, topic, onSaved, allTopics=[]){
+  const headerHtml = record && topic ? `<div style="padding:16px; background-color:${topic.color}22; border-left:4px solid ${topic.color}; margin-bottom:20px; border-radius:8px">
     <div style="font-size:13px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.05em">Tópico</div>
     <div style="font-size:18px; font-weight:600; color:${topic.color}; margin-top:4px">${topic.icon?icon(topic.icon,18)+' ':''}${esc(topic.name)}</div>
   </div>` : '';
+  
+  const fields = [];
+  
+  // Se for nova entrada, mostrar seletor de tópico
+  if(!record && allTopics.length > 0){
+    fields.push({
+      key:'topic_id',
+      label:'Tópico',
+      type:'select',
+      options: allTopics.map(t=>({value: String(t.id), label: `${t.icon?icon(t.icon,12)+' ':''}${esc(t.name)}`})),
+      default: String(topic?.id || (allTopics[0]?.id || ''))
+    });
+  }
+  
+  fields.push(
+    {key:'text', label:'Escreve aqui', type:'textarea', full:true, placeholder:'O que está a pensar ou a observar sobre este tópico...'},
+    {key:'entry_date', label:'Data', type:'date', default: record?.entry_date || todayISO()}
+  );
   
   formModal({
     title: record? 'Editar entrada' : 'Nova entrada no tópico',
     table:'topic_entries',
     record: record || null,
     extraHtmlTop: headerHtml,
-    fields:[
-      {key:'text', label:'Escreve aqui', type:'textarea', full:true, placeholder:'O que está a pensar ou a observar sobre este tópico...'},
-      {key:'entry_date', label:'Data', type:'date', default: record?.entry_date || todayISO()},
-    ],
+    fields: fields,
     beforeSave:(p)=>{
-      if(!record) p.topic_id = topic.id;
+      if(!record && topic && !p.topic_id) p.topic_id = topic.id;
+      if(!record && !p.topic_id && allTopics.length > 0) p.topic_id = parseInt(p.topic_id) || allTopics[0].id;
       p.updated_at = new Date().toISOString();
       return p;
     },
