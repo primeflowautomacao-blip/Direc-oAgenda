@@ -1144,6 +1144,7 @@ VIEW_RENDERERS.diario = async (wrap)=>{
       <div style="display:flex; gap:8px">
         <button class="btn btn-primary" id="new-topic">${icon('plus',15)} Novo tópico</button>
         <button class="btn btn-primary" id="new-entry">${icon('plus',15)} Nova entrada</button>
+        <button class="btn" id="reading-btn" style="display:none">${icon('book',15)} Modo leitura</button>
       </div>
     </div>
     ${toolbarHtml({searchPlaceholder:'Pesquisar neste tópico...'})}
@@ -1153,13 +1154,25 @@ VIEW_RENDERERS.diario = async (wrap)=>{
     <div class="list" id="diario-list"></div>
   `;
   
+  function updateReadingButton(){
+    const readBtn = document.getElementById('reading-btn');
+    const currentTopic = topics.find(t=>t.id===activeTopic);
+    const topicHasEntries = topicEntries.some(e=>e.topic_id===activeTopic);
+    if(readBtn) {
+      readBtn.style.display = topicHasEntries ? 'flex' : 'none';
+      readBtn.onclick = ()=>openReadingMode(currentTopic, topicEntries);
+    }
+  }
+  
   draw();
+  updateReadingButton();
   
   document.getElementById('new-topic').onclick = ()=>openTopicModal(null, async ()=>{
     topics = await dbList('topics', {order:'name', asc:true});
     topics = topics.map(t=>({...t, id: parseInt(t.id)}));
     activeTopic = topics[topics.length-1]?.id || null;
     draw();
+    updateReadingButton();
   });
   
   document.getElementById('new-entry').onclick = ()=>{
@@ -1169,6 +1182,7 @@ VIEW_RENDERERS.diario = async (wrap)=>{
       topicEntries = await dbList('topic_entries', {order:'entry_date', asc:false});
       topicEntries = topicEntries.map(e=>({...e, id: parseInt(e.id), topic_id: parseInt(e.topic_id)}));
       draw();
+      updateReadingButton();
     });
   };
   
@@ -1178,22 +1192,9 @@ VIEW_RENDERERS.diario = async (wrap)=>{
     c.onclick = ()=>{
       activeTopic = parseInt(c.dataset.topic);
       draw();
+      updateReadingButton();
     };
   });
-  
-  // Adicionar botão de modo leitura ao titulo
-  setTimeout(()=>{
-    const viewHead = wrap.querySelector('.view-head');
-    if(viewHead) {
-      const currentTopic = topics.find(t=>t.id===activeTopic);
-      const readBtn = document.createElement('button');
-      readBtn.className = 'btn btn-primary';
-      readBtn.style.cssText = 'position:absolute;right:20px;top:20px;';
-      readBtn.innerHTML = `${icon('book',15)} Modo leitura`;
-      readBtn.onclick = ()=>openReadingMode(currentTopic, topicEntries);
-      wrap.querySelector('.view-head').appendChild(readBtn);
-    }
-  }, 100);
   
   function bindTopicRows(){
     wrap.querySelectorAll('[data-tentry]').forEach(el=>{
