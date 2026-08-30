@@ -1144,7 +1144,7 @@ VIEW_RENDERERS.diario = async (wrap)=>{
       <div style="display:flex; gap:8px">
         <button class="btn btn-primary" id="new-topic">${icon('plus',15)} Novo tópico</button>
         <button class="btn btn-primary" id="new-entry">${icon('plus',15)} Nova entrada</button>
-        <button class="btn" id="reading-btn" style="display:none">${icon('book',15)} Modo leitura</button>
+        <button class="btn" id="reading-btn" style="display:flex">${icon('book',15)} Modo leitura</button>
       </div>
     </div>
     ${toolbarHtml({searchPlaceholder:'Pesquisar neste tópico...'})}
@@ -1156,12 +1156,20 @@ VIEW_RENDERERS.diario = async (wrap)=>{
   
   function updateReadingButton(){
     const readBtn = document.getElementById('reading-btn');
+    if(!readBtn) return;
+    
     const currentTopic = topics.find(t=>t.id===activeTopic);
-    const topicHasEntries = topicEntries.some(e=>e.topic_id===activeTopic);
-    if(readBtn) {
-      readBtn.style.display = topicHasEntries ? 'flex' : 'none';
-      readBtn.onclick = ()=>openReadingMode(currentTopic, topicEntries);
-    }
+    if(!currentTopic) return;
+    
+    // Sempre mostrar o botão, independentemente de haver entradas
+    const topicEntriesForCurrentTopic = topicEntries.filter(e=>parseInt(e.topic_id)===parseInt(activeTopic));
+    readBtn.onclick = ()=>{
+      if(!topicEntriesForCurrentTopic.length){
+        toast('Sem entradas neste tópico');
+        return;
+      }
+      openReadingMode(currentTopic, topicEntriesForCurrentTopic);
+    };
   }
   
   draw();
@@ -1193,7 +1201,10 @@ VIEW_RENDERERS.diario = async (wrap)=>{
     }, topics);
   };
   
-  document.getElementById('tb-search').addEventListener('input', draw);
+  document.getElementById('tb-search').addEventListener('input', ()=>{
+    draw();
+    updateReadingButton();
+  });
   
   document.querySelectorAll('#topic-chips .chip').forEach(c=>{
     c.onclick = ()=>{
@@ -1289,8 +1300,8 @@ function openTopicEntryModal(record, topic, onSaved, allTopics=[]){
   });
 }
 
-function openReadingMode(topic, allEntries){
-  const entries = allEntries.filter(e=>e.topic_id===topic.id).sort((a,b)=>new Date(a.entry_date)-new Date(b.entry_date));
+function openReadingMode(topic, topicEntries){
+  const entries = topicEntries.filter(e=>parseInt(e.topic_id)===parseInt(topic.id)).sort((a,b)=>new Date(a.entry_date)-new Date(b.entry_date));
   if(!entries.length) { toast('Sem entradas neste tópico'); return; }
   
   let currentIdx = 0;
