@@ -1081,96 +1081,160 @@ function bindHabitDashRows(wrap, today){
 }
 
 /* ============================================================
-   DIÁRIO
+   DIÁRIOS POR TÓPICOS
    ============================================================ */
-const JOURNAL_CATEGORIES = ['diario','pensamento','gratidao','reflexao','ideia','problema','aprendizado','decisao'];
-const JOURNAL_CAT_LABEL = {diario:'Diário',pensamento:'Pensamento',gratidao:'Gratidão',reflexao:'Reflexão',ideia:'Ideia',problema:'Problema',aprendizado:'Aprendizado',decisao:'Decisão'};
-const MOODS = ['😔','😐','🙂','😄','🙏','😤','😌','😢'];
-
 VIEW_RENDERERS.diario = async (wrap)=>{
-  let entries = await dbList('journal_entries', {order:'entry_date', asc:false});
-  state.cache.diario = entries;
-  let activeCat = 'todas';
+  let topics = await dbList('topics', {order:'name', asc:true});
+  let topicEntries = await dbList('topic_entries', {order:'entry_date', asc:false});
+  state.cache.diario = topicEntries;
+  let activeTopic = topics.length ? topics[0].id : null;
+  
   function draw(){
-    let list = entries;
-    if(activeCat!=='todas') list = list.filter(e=>e.category===activeCat);
+    const currentTopic = topics.find(t=>t.id===activeTopic);
+    const entries = currentTopic ? topicEntries.filter(e=>e.topic_id===activeTopic) : [];
     const q = (document.getElementById('tb-search')?.value||'').toLowerCase();
-    if(q) list = list.filter(e=> (e.title||'').toLowerCase().includes(q) || (e.body||'').toLowerCase().includes(q) || (e.tags||[]).join(' ').toLowerCase().includes(q));
-    document.getElementById('diario-list').innerHTML = list.length? list.map(journalRow).join('') : `<div class="empty-state">${icon('book',36)}<h3>Nenhuma entrada encontrada</h3><p>Escreve o que estás a pensar ou a viver hoje. O teu diário começa com uma linha.</p></div>`;
-    bindJournalRows();
+    let filtered = entries;
+    if(q) filtered = filtered.filter(e=> (e.text||'').toLowerCase().includes(q));
+    
+    // Renderizar tópicos como chips coloridos
+    const topicsHtml = topics.map(t=>`
+      <div class="chip ${t.id===activeTopic?'active':''}" data-topic="${t.id}" style="background-color:${t.color}20; border-color:${t.color}; color:${t.color}">
+        ${t.icon?icon(t.icon,14)+' ':''}${esc(t.name)}
+      </div>
+    `).join('');
+    
+    // Renderizar entries agrupadas por data
+    const groupedByDate = {};
+    filtered.forEach(e=>{
+      if(!groupedByDate[e.entry_date]) groupedByDate[e.entry_date] = [];
+      groupedByDate[e.entry_date].push(e);
+    });
+    const sortedDates = Object.keys(groupedByDate).sort().reverse();
+    const entriesHtml = sortedDates.map(date=>`
+      <div style="margin-bottom:24px">
+        <div style="font-size:13px; color:var(--text-dim); font-weight:600; margin-bottom:10px; text-transform:uppercase; letter-spacing:.05em">${fmtDateLong(date)}</div>
+        ${groupedByDate[date].map(e=>`
+          <div class="row-item card-hover" data-tentry="${e.id}" style="border-left:3px solid ${currentTopic?.color||'var(--gold)'}">
+            <div class="ri-main">
+              <div class="ri-title">${esc(e.text.substring(0,100))}</div>
+              <div class="ri-meta" style="margin-top:6px; font-size:12px; color:var(--text-faint)">${e.text.length>100?'...':''}${e.text.length>100?' '+e.text.length+' caracteres':''}</div>
+            </div>
+            <div class="ri-actions">${icon('chevronRight',15)}</div>
+          </div>
+        `).join('')}
+      </div>
+    `).join('');
+    
+    document.getElementById('diario-list').innerHTML = filtered.length ? entriesHtml : `<div class="empty-state">${icon('book',36)}<h3>Nenhuma entrada</h3><p>Comece a escrever neste tópico para acompanhar a sua evolução.</p></div>`;
+    bindTopicRows();
+    
+    // Atualizar chip de tópicos
+    document.querySelectorAll('#topic-chips .chip').forEach(c=>{
+      if(parseInt(c.dataset.topic)===activeTopic) c.classList.add('active');
+      else c.classList.remove('active');
+    });
   }
+  
   wrap.innerHTML = `
     <div class="view-head">
-      <div><div class="view-eyebrow">Registo</div><h1 class="view-title">Diário</h1><div class="view-sub">Pensamentos, reflexões, gratidão e aprendizados — no teu próprio ritmo.</div></div>
-      <button class="btn btn-primary" id="new-journal">${icon('plus',15)} Nova entrada</button>
+      <div><div class="view-eyebrow">Registo</div><h1 class="view-title">Diários por Tópicos</h1><div class="view-sub">Acompanhe a evolução dos seus pensamentos ao longo do tempo.</div></div>
+      <div style="display:flex; gap:8px">
+        <button class="btn btn-primary" id="new-topic">${icon('plus',15)} Novo tópico</button>
+        <button class="btn btn-primary" id="new-entry">${icon('plus',15)} Nova entrada</button>
+      </div>
     </div>
-    ${toolbarHtml({searchPlaceholder:'Pesquisar no diário...'})}
-    <div class="chip-row" id="cat-chips" style="margin-bottom:18px">
-      <div class="chip active" data-c="todas">Todas</div>
-      ${JOURNAL_CATEGORIES.map(c=>`<div class="chip" data-c="${c}">${JOURNAL_CAT_LABEL[c]}</div>`).join('')}
+    ${toolbarHtml({searchPlaceholder:'Pesquisar neste tópico...'})}
+    <div class="chip-row" id="topic-chips" style="margin-bottom:18px">
+      ${topics.map(t=>`<div class="chip" data-topic="${t.id}" style="background-color:${t.color}20; border-color:${t.color}; color:${t.color}; cursor:pointer">${t.icon?icon(t.icon,14)+' ':''}${esc(t.name)} <span style="font-size:11px; opacity:.7; margin-left:4px">(${topicEntries.filter(e=>e.topic_id===t.id).length})</span></div>`).join('')}
     </div>
     <div class="list" id="diario-list"></div>
   `;
+  
   draw();
-  document.getElementById('new-journal').onclick = ()=>openJournalModal(null, draw);
+  
+  document.getElementById('new-topic').onclick = ()=>openTopicModal(null, async ()=>{
+    topics = await dbList('topics', {order:'name', asc:true});
+    activeTopic = topics[topics.length-1]?.id || null;
+    draw();
+  });
+  
+  document.getElementById('new-entry').onclick = ()=>{
+    if(!activeTopic) { toast('Seleccione ou crie um tópico primeiro'); return; }
+    openTopicEntryModal(null, activeTopic, async ()=>{
+      topicEntries = await dbList('topic_entries', {order:'entry_date', asc:false});
+      draw();
+    });
+  };
+  
   document.getElementById('tb-search').addEventListener('input', draw);
-  wrap.querySelectorAll('#cat-chips .chip').forEach(c=>c.addEventListener('click', ()=>{
-    wrap.querySelectorAll('#cat-chips .chip').forEach(x=>x.classList.remove('active'));
-    c.classList.add('active'); activeCat=c.dataset.c; draw();
-  }));
-  function bindJournalRows(){
-    wrap.querySelectorAll('[data-jentry]').forEach(el=>{
-      el.addEventListener('click', ()=>{
-        const rec = entries.find(e=>e.id===el.dataset.jentry);
-        openJournalModal(rec, async ()=>{ entries = await dbList('journal_entries', {order:'entry_date', asc:false}); draw(); });
-      });
+  
+  document.querySelectorAll('#topic-chips .chip').forEach(c=>{
+    c.onclick = ()=>{
+      activeTopic = parseInt(c.dataset.topic);
+      draw();
+    };
+  });
+  
+  function bindTopicRows(){
+    wrap.querySelectorAll('[data-tentry]').forEach(el=>{
+      el.onclick = ()=>{
+        const rec = topicEntries.find(e=>e.id===el.dataset.tentry);
+        openTopicEntryModal(rec, activeTopic, async ()=>{
+          topicEntries = await dbList('topic_entries', {order:'entry_date', asc:false});
+          draw();
+        });
+      };
     });
   }
 };
-function journalRow(e){
-  const moodIdx = MOODS.indexOf(e.mood);
-  return `<div class="row-item card-hover" data-jentry="${e.id}">
-    <div style="font-size:22px; width:38px; text-align:center; flex-shrink:0">${e.mood||'📝'}</div>
-    <div class="ri-main">
-      <div class="ri-title">${esc(e.title)||'(sem título)'}</div>
-      <div class="ri-meta">
-        <span>${fmtDateShort(e.entry_date)}</span>
-        <span class="badge badge-gold">${JOURNAL_CAT_LABEL[e.category]||e.category}</span>
-        ${(e.tags||[]).slice(0,3).map(t=>`<span class="badge badge-muted">#${esc(t)}</span>`).join('')}
-      </div>
-    </div>
-    <div class="ri-actions">${icon('chevronRight',15)}</div>
-  </div>`;
-}
-function openJournalModal(record, onSaved){
-  const moodPicker = `<div class="field"><label>Humor</label><div class="mood-row" id="mood-row">
-    ${MOODS.map(m=>`<div class="mood-opt ${record?.mood===m?'active':''}" data-m="${m}">${m}</div>`).join('')}
-  </div><input type="hidden" id="f_mood" value="${record?.mood||''}"></div>`;
+
+function openTopicModal(record, onSaved){
   formModal({
-    title: record? 'Editar entrada' : 'Nova entrada no diário',
-    table:'journal_entries',
+    title: record? 'Editar tópico' : 'Novo tópico',
+    table:'topics',
     record,
-    extraHtmlTop: moodPicker,
     fields:[
-      {key:'title', label:'Título', placeholder:'Um título curto (opcional)'},
-      {key:'category', label:'Categoria', type:'select', options:JOURNAL_CATEGORIES.map(c=>({value:c,label:JOURNAL_CAT_LABEL[c]})), default:'diario'},
-      {key:'entry_date', label:'Data', type:'date', default:todayISO()},
-      {key:'entry_time', label:'Hora', type:'time', default:nowTime()},
-      {key:'body', label:'Escreve aqui', type:'textarea', full:true, placeholder:'O que aconteceu, o que pensaste, o que sentiste...'},
-      {key:'learned', label:'O que aprendi hoje? (opcional)', type:'textarea', full:true},
-      {key:'tags', label:'Tags', type:'tags'},
+      {key:'name', label:'Nome do tópico', placeholder:'ex: Crispim, Evolução, Ideias'},
+      {key:'description', label:'Descrição (opcional)', type:'textarea'},
+      {key:'color', label:'Cor', type:'select', options:[
+        {value:'#BD7B7B',label:'🌹 Rosa'},
+        {value:'#7FA88C',label:'🌿 Verde'},
+        {value:'#6E93B7',label:'🌊 Azul'},
+        {value:'#C9A35F',label:'✨ Ouro'},
+        {value:'#A6AEBF',label:'⚡ Cinzento'},
+      ], default:'#7FA88C'},
+      {key:'icon', label:'Ícone', type:'select', options:[
+        {value:'user',label:'👤 Utilizador'},
+        {value:'growth',label:'📈 Crescimento'},
+        {value:'lightbulb',label:'💡 Ideia'},
+        {value:'pray',label:'🙏 Espiritual'},
+        {value:'heart',label:'❤️ Coração'},
+        {value:'north',label:'🧭 Guia'},
+        {value:'inbox',label:'📥 Inbox'},
+        {value:'book',label:'📚 Livro'},
+      ], default:'north'},
     ],
     beforeSave:(p)=>{ p.updated_at = new Date().toISOString(); return p; },
     afterSave: onSaved,
   });
-  setTimeout(()=>{
-    document.querySelectorAll('#mood-row .mood-opt').forEach(m=>{
-      m.onclick = ()=>{
-        document.querySelectorAll('#mood-row .mood-opt').forEach(x=>x.classList.remove('active'));
-        m.classList.add('active'); document.getElementById('f_mood').value = m.dataset.m;
-      };
-    });
-  },0);
+}
+
+function openTopicEntryModal(record, topicId, onSaved){
+  formModal({
+    title: record? 'Editar entrada' : 'Nova entrada no tópico',
+    table:'topic_entries',
+    record: record ? {...record} : {topic_id:topicId, entry_date:todayISO()},
+    fields:[
+      {key:'text', label:'Escreve aqui', type:'textarea', full:true, placeholder:'O que está a pensar ou a observar sobre este tópico...'},
+      {key:'entry_date', label:'Data', type:'date', default:todayISO()},
+    ],
+    beforeSave:(p)=>{
+      if(!record) p.topic_id = topicId;
+      p.updated_at = new Date().toISOString();
+      return p;
+    },
+    afterSave: onSaved,
+  });
 }
 
 /* ============================================================
@@ -2270,7 +2334,7 @@ function norteField(key, label, val){
 /* ============================================================
    CONFIGURAÇÕES
    ============================================================ */
-const ALL_TABLES = ['journal_entries','quick_notes','private_logs','decisions','goals','time_logs','tasks','events','prayers','bible_studies','gratitude_entries','habits','habit_logs','weekly_reviews','monthly_reviews','meu_norte','activity_targets'];
+const ALL_TABLES = ['journal_entries','quick_notes','private_logs','decisions','goals','time_logs','tasks','events','prayers','bible_studies','gratitude_entries','habits','habit_logs','weekly_reviews','monthly_reviews','meu_norte','activity_targets','topics','topic_entries'];
 VIEW_RENDERERS.config = async (wrap)=>{
   wrap.innerHTML = `
     <div class="view-head"><div><div class="view-eyebrow">Sistema</div><h1 class="view-title">Configurações</h1></div></div>
