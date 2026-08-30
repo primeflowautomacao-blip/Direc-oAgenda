@@ -1175,7 +1175,14 @@ VIEW_RENDERERS.diario = async (wrap)=>{
     updateReadingButton();
   });
   
-  document.getElementById('new-entry').onclick = ()=>{
+  document.getElementById('new-entry').onclick = async ()=>{
+    // Recarregar tópicos para garantir que novos tópicos apareçam
+    topics = await dbList('topics', {order:'name', asc:true});
+    topics = topics.map(t=>({...t, id: parseInt(t.id)}));
+    
+    if(!activeTopic && topics.length > 0) {
+      activeTopic = topics[0].id;
+    }
     if(!activeTopic) { toast('Seleccione ou crie um tópico primeiro'); return; }
     const currentTopic = topics.find(t=>t.id===activeTopic);
     openTopicEntryModal(null, currentTopic, async ()=>{
