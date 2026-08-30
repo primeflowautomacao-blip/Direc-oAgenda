@@ -1181,6 +1181,20 @@ VIEW_RENDERERS.diario = async (wrap)=>{
     };
   });
   
+  // Adicionar botão de modo leitura ao titulo
+  setTimeout(()=>{
+    const viewHead = wrap.querySelector('.view-head');
+    if(viewHead) {
+      const currentTopic = topics.find(t=>t.id===activeTopic);
+      const readBtn = document.createElement('button');
+      readBtn.className = 'btn btn-primary';
+      readBtn.style.cssText = 'position:absolute;right:20px;top:20px;';
+      readBtn.innerHTML = `${icon('book',15)} Modo leitura`;
+      readBtn.onclick = ()=>openReadingMode(currentTopic, topicEntries);
+      wrap.querySelector('.view-head').appendChild(readBtn);
+    }
+  }, 100);
+  
   function bindTopicRows(){
     wrap.querySelectorAll('[data-tentry]').forEach(el=>{
       el.onclick = ()=>{
@@ -1249,6 +1263,89 @@ function openTopicEntryModal(record, topic, onSaved){
     },
     afterSave: onSaved,
   });
+}
+
+function openReadingMode(topic, allEntries){
+  const entries = allEntries.filter(e=>e.topic_id===topic.id).sort((a,b)=>new Date(a.entry_date)-new Date(b.entry_date));
+  if(!entries.length) { toast('Sem entradas neste tópico'); return; }
+  
+  let currentIdx = 0;
+  
+  const modal = document.createElement('div');
+  modal.id = 'reading-mode-overlay';
+  modal.style.cssText = `
+    position:fixed; inset:0; z-index:400;
+    background:var(--ink);
+    display:flex; flex-direction:column;
+    overflow:hidden;
+  `;
+  
+  function render(){
+    const entry = entries[currentIdx];
+    const prev = currentIdx > 0;
+    const next = currentIdx < entries.length - 1;
+    
+    const dateObj = new Date(entry.entry_date + 'T00:00:00');
+    const dayName = dateObj.toLocaleDateString('pt-PT', {weekday:'long'});
+    const fullDate = dateObj.toLocaleDateString('pt-PT', {year:'numeric', month:'long', day:'numeric'});
+    
+    modal.innerHTML = `
+      <div style="flex:1; overflow-y:auto; display:flex; align-items:center; justify-content:center; padding:40px 20px;">
+        <div style="max-width:700px; width:100%;">
+          <!-- Cabeçalho do tópico -->
+          <div style="text-align:center; margin-bottom:40px;">
+            <div style="font-size:14px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.1em; margin-bottom:8px">Tópico</div>
+            <div style="font-size:32px; font-weight:600; color:${topic.color}; font-family:var(--font-display); margin-bottom:20px;">${topic.icon?icon(topic.icon,40)+' ':''}${esc(topic.name)}</div>
+            <div style="width:60px; height:2px; background:${topic.color}; margin:0 auto;"></div>
+          </div>
+          
+          <!-- Data da entrada -->
+          <div style="text-align:center; margin-bottom:32px;">
+            <div style="font-size:24px; font-family:var(--font-display); color:var(--text); margin-bottom:6px; text-transform:capitalize">${dayName}</div>
+            <div style="font-size:14px; color:var(--text-dim); letter-spacing:.05em">${fullDate}</div>
+          </div>
+          
+          <!-- Conteúdo -->
+          <div style="font-size:16px; line-height:1.8; color:var(--text); white-space:pre-wrap; word-break:break-word; text-align:justify; margin-bottom:40px;">
+            ${esc(entry.text)}
+          </div>
+          
+          <!-- Separador -->
+          <div style="text-align:center; margin:40px 0; font-size:20px; color:var(--text-faint);">∞</div>
+          
+          <!-- Navegação -->
+          <div style="display:flex; gap:12px; justify-content:center; align-items:center; margin-bottom:20px;">
+            ${prev ? `<button id="reading-prev" style="padding:10px 16px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); cursor:pointer; font-size:14px;">${icon('chevronLeft',14)} Anterior</button>` : '<div style="width:100px;"></div>'}
+            <div style="font-size:12px; color:var(--text-dim); text-align:center;">
+              <div>${currentIdx + 1} de ${entries.length}</div>
+              <div style="margin-top:4px; font-size:10px; letter-spacing:.05em;">ENTRADA ${currentIdx + 1}</div>
+            </div>
+            ${next ? `<button id="reading-next" style="padding:10px 16px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); cursor:pointer; font-size:14px;">Próxima ${icon('chevronRight',14)}</button>` : '<div style="width:100px;"></div>'}
+          </div>
+        </div>
+      </div>
+      
+      <!-- Botão de sair -->
+      <div style="padding:20px; text-align:center; border-top:1px solid var(--border);">
+        <button id="reading-close" style="padding:10px 24px; border-radius:8px; border:1px solid var(--border-soft); background:transparent; color:var(--text-dim); cursor:pointer; font-size:14px;">${icon('x',14)} Fechar</button>
+      </div>
+    `;
+    
+    if(prev) modal.querySelector('#reading-prev').onclick = ()=>{ currentIdx--; render(); };
+    if(next) modal.querySelector('#reading-next').onclick = ()=>{ currentIdx++; render(); };
+    modal.querySelector('#reading-close').onclick = ()=>{ modal.remove(); };
+    
+    // Fechar com Escape
+    const handleKeyDown = (e)=>{
+      if(e.key==='Escape') { modal.remove(); document.removeEventListener('keydown', handleKeyDown); }
+      if(e.key==='ArrowLeft' && prev) { currentIdx--; render(); }
+      if(e.key==='ArrowRight' && next) { currentIdx++; render(); }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+  }
+  
+  document.body.appendChild(modal);
+  render();
 }
 
 /* ============================================================
