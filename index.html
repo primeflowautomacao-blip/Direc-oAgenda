@@ -1086,6 +1086,9 @@ function bindHabitDashRows(wrap, today){
 VIEW_RENDERERS.diario = async (wrap)=>{
   let topics = await dbList('topics', {order:'name', asc:true});
   let topicEntries = await dbList('topic_entries', {order:'entry_date', asc:false});
+  // Garantir que todos os IDs são números (Supabase pode enviar como strings)
+  topics = topics.map(t=>({...t, id: parseInt(t.id)}));
+  topicEntries = topicEntries.map(e=>({...e, id: parseInt(e.id), topic_id: parseInt(e.topic_id)}));
   state.cache.diario = topicEntries;
   let activeTopic = topics.length ? topics[0].id : null;
   
@@ -1154,6 +1157,7 @@ VIEW_RENDERERS.diario = async (wrap)=>{
   
   document.getElementById('new-topic').onclick = ()=>openTopicModal(null, async ()=>{
     topics = await dbList('topics', {order:'name', asc:true});
+    topics = topics.map(t=>({...t, id: parseInt(t.id)}));
     activeTopic = topics[topics.length-1]?.id || null;
     draw();
   });
@@ -1163,6 +1167,7 @@ VIEW_RENDERERS.diario = async (wrap)=>{
     const currentTopic = topics.find(t=>t.id===activeTopic);
     openTopicEntryModal(null, currentTopic, async ()=>{
       topicEntries = await dbList('topic_entries', {order:'entry_date', asc:false});
+      topicEntries = topicEntries.map(e=>({...e, id: parseInt(e.id), topic_id: parseInt(e.topic_id)}));
       draw();
     });
   };
@@ -1179,10 +1184,11 @@ VIEW_RENDERERS.diario = async (wrap)=>{
   function bindTopicRows(){
     wrap.querySelectorAll('[data-tentry]').forEach(el=>{
       el.onclick = ()=>{
-        const rec = topicEntries.find(e=>e.id===el.dataset.tentry);
+        const rec = topicEntries.find(e=>e.id===parseInt(el.dataset.tentry));
         const currentTopic = topics.find(t=>t.id===rec.topic_id);
         openTopicEntryModal(rec, currentTopic, async ()=>{
           topicEntries = await dbList('topic_entries', {order:'entry_date', asc:false});
+          topicEntries = topicEntries.map(e=>({...e, id: parseInt(e.id), topic_id: parseInt(e.topic_id)}));
           draw();
         });
       };
