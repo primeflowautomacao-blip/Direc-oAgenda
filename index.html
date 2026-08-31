@@ -1505,18 +1505,23 @@ function openQuickNoteModal(onSaved, editNote = null){
     onMount:(box)=>{
       const titleInput = box.querySelector('#qn-title');
       const ta = box.querySelector('#qn-text');
-      titleInput.focus();
+      ta.focus();
       box.querySelector('#qn-cancel').onclick = closeModal;
       const save = async ()=>{
         const title = titleInput.value.trim() || 'Pensamento';
         const content = ta.value.trim();
-        if(!content) return;
-        if(isEdit){
-          await dbUpdate('quick_notes', editNote.id, {title, content});
-        } else {
-          await dbInsert('quick_notes', {title, content});
+        if(!content){ toast('Escreve algo antes de guardar...', 'warn'); return; }
+        try {
+          if(isEdit){
+            await dbUpdate('quick_notes', editNote.id, {title, content});
+          } else {
+            await dbInsert('quick_notes', {title, content});
+          }
+          closeModal(); onSaved && onSaved();
+        } catch(err){
+          console.error('Erro ao guardar pensamento:', err);
+          toast('Erro ao guardar. Tenta novamente.', 'err');
         }
-        closeModal(); onSaved && onSaved();
       };
       box.querySelector('#qn-save').onclick = save;
       ta.addEventListener('keydown', e=>{ if(e.key==='Enter' && e.shiftKey){ e.preventDefault(); save(); } });
