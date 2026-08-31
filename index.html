@@ -267,6 +267,49 @@ main{
 .empty-state h3{font-size:16px; color:var(--text-dim); margin-bottom:6px;}
 .empty-state p{font-size:13px; max-width:320px; margin:0 auto;}
 
+/* Note Card — Estilo de Livro */
+.note-card{
+  background:linear-gradient(135deg, var(--card) 0%, var(--card-raised) 100%);
+  border:1px solid var(--border); border-radius:var(--radius-lg); padding:32px;
+  margin-bottom:24px; transition:all .3s cubic-bezier(.4,0,.2,1);
+  box-shadow:var(--shadow-card); max-width:780px; margin-left:auto; margin-right:auto;
+}
+.note-card:hover{
+  background:linear-gradient(135deg, var(--card-hover) 0%, var(--card) 100%);
+  box-shadow:var(--shadow-pop); transform:translateY(-2px);
+}
+.note-title{
+  font-family:var(--font-display); font-size:26px; font-weight:600; color:var(--gold);
+  margin:0 0 8px; letter-spacing:-.01em; line-height:1.2;
+}
+.note-header{
+  display:flex; justify-content:space-between; align-items:center; gap:16px;
+  margin-bottom:20px; padding-bottom:12px; border-bottom:1px solid var(--border-soft);
+}
+.note-date{
+  font-size:13px; color:var(--text-dim); font-family:var(--font-mono); font-weight:500;
+}
+.note-actions{display:flex; gap:6px; opacity:.6; transition:opacity .2s;}
+.note-card:hover .note-actions{opacity:1;}
+.note-edit-btn, .note-delete{
+  background:none; border:none; color:var(--text-dim); cursor:pointer;
+  padding:4px 8px; transition:color .15s; font-size:14px; display:flex; align-items:center;
+}
+.note-edit-btn:hover{color:var(--sky);}
+.note-delete:hover{color:var(--danger);}
+.note-content{
+  color:var(--text); line-height:1.8; font-size:16px; white-space:pre-wrap; word-wrap:break-word;
+  font-family:var(--font-body); letter-spacing:.003em; margin-bottom:0;
+}
+.note-separator{height:1px; background:linear-gradient(to right, transparent, var(--border), transparent); margin:16px 0;}
+.note-meta{font-size:12px; color:var(--text-faint); font-weight:500;}
+.quick-notes-empty{
+  text-align:center; padding:60px 20px; color:var(--text-dim);
+  max-width:400px; margin:0 auto;
+}
+.quick-notes-empty h3{font-size:18px; color:var(--text-dim); margin:8px 0;}
+.quick-notes-empty p{margin:0; line-height:1.6; font-size:14px; color:var(--text-faint);}
+
 .section-title{font-size:16px; font-weight:600; font-family:var(--font-display); margin:32px 0 14px; display:flex; align-items:center; gap:10px;}
 .section-title:first-child{margin-top:0;}
 
@@ -1440,40 +1483,43 @@ function openReadingMode(topic, allEntries){
 VIEW_RENDERERS.notas = async (wrap)=>{
   let notes = await dbList('quick_notes');
   function draw(){
-    document.getElementById('notas-list').innerHTML = notes.length? notes.map(n=>`
-      <div class="row-item">
-        <div style="width:34px;height:34px;border-radius:10px;background:var(--gold-soft);display:flex;align-items:center;justify-content:center;color:var(--gold);flex-shrink:0">${icon('zap',15)}</div>
-        <div class="ri-main"><div class="ri-title">${esc(n.content)}</div><div class="ri-meta">${new Date(n.created_at).toLocaleString('pt-PT')} ${n.processed?'<span class=\"badge badge-sage\">Organizada</span>':''}</div></div>
-        <div class="ri-actions">
-          ${!n.processed?`<button class="btn btn-sm btn-ghost" data-process="${n.id}">Marcar organizada</button>`:''}
-          <button class="icon-btn btn" data-del="${n.id}">${icon('trash',14)}</button>
-        </div>
-      </div>`).join('') : `<div class="empty-state">${icon('zap',36)}<h3>Sem pensamentos por agora</h3><p>Usa o botão + para capturar uma ideia em segundos.</p></div>`;
-    wrap.querySelectorAll('[data-process]').forEach(b=>b.onclick=async()=>{ await dbUpdate('quick_notes', b.dataset.process, {processed:true}); notes = await dbList('quick_notes'); draw(); });
-    wrap.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{ if(await confirmDialog('Eliminar esta nota?')){ await dbDelete('quick_notes', b.dataset.del); notes = await dbList('quick_notes'); draw(); } });
+    document.getElementById('notas-list').innerHTML = notes.length? notes.map(n=>{
+      const createdDate = new Date(n.created_at);
+      const dateStr = createdDate.toLocaleDateString('pt-PT') + ' às ' + createdDate.toLocaleTimeString('pt-PT', {hour:'2-digit', minute:'2-digit'});
+      return `<div class="note-card" data-id="${n.id}"><h3 class="note-title">${esc(n.title||'Pensamento')}</h3><div class="note-header"><div class="note-date">${dateStr}</div><div class="note-actions">${!n.processed?`<button class="note-edit-btn" data-process="${n.id}" title="Marcar organizada">${icon('check',12)}</button>`:''}<button class="note-edit-btn" data-edit="${n.id}" title="Editar">${icon('edit',12)}</button><button class="note-delete" data-del="${n.id}" title="Eliminar">${icon('trash',12)}</button></div></div><div class="note-content">${esc(n.content).replace(/\n/g,'<br>')}</div>${n.processed?'<div class="note-separator"></div><div class="note-meta">✓ Organizada</div>':''}</div>`;
+    }).join('') : `<div class="quick-notes-empty"><div style="font-size:48px;margin-bottom:16px;opacity:.3">${icon('zap',48)}</div><h3>Sem pensamentos ainda</h3><p>Clica em "Novo pensamento" para capturar uma ideia rapidamente.</p></div>`;
+    wrap.querySelectorAll('[data-process]').forEach(b=>b.onclick=async(e)=>{ e.stopPropagation(); await dbUpdate('quick_notes', b.dataset.process, {processed:true}); notes = await dbList('quick_notes'); draw(); });
+    wrap.querySelectorAll('[data-edit]').forEach(b=>b.onclick=async(e)=>{ e.stopPropagation(); const note = notes.find(n=>n.id==b.dataset.edit); openQuickNoteModal(async ()=>{ notes = await dbList('quick_notes'); draw(); }, note); });
+    wrap.querySelectorAll('[data-del]').forEach(b=>b.onclick=async(e)=>{ e.stopPropagation(); if(await confirmDialog('Eliminar este pensamento?')){ await dbDelete('quick_notes', b.dataset.del); notes = await dbList('quick_notes'); draw(); } });
   }
-  wrap.innerHTML = `
-    <div class="view-head"><div><div class="view-eyebrow">Registo</div><h1 class="view-title">Pensamentos rápidos</h1><div class="view-sub">Captura primeiro, organiza depois.</div></div>
-      <button class="btn btn-primary" id="new-note">${icon('plus',15)} Nova nota</button></div>
-    <div class="list" id="notas-list"></div>`;
+  wrap.innerHTML = `<div class="view-head"><div><div class="view-eyebrow">Registo</div><h1 class="view-title">Pensamentos rápidos</h1><div class="view-sub">Captura primeiro, organiza depois.</div></div><button class="btn btn-primary" id="new-note">${icon('plus',15)} Novo pensamento</button></div><div class="list" id="notas-list"></div>`;
   draw();
   document.getElementById('new-note').onclick = ()=>openQuickNoteModal(async ()=>{ notes = await dbList('quick_notes'); draw(); });
 };
-function openQuickNoteModal(onSaved){
+function openQuickNoteModal(onSaved, editNote = null){
+  const isEdit = !!editNote;
   openModal({
-    title:'Nova nota rápida',
-    bodyHtml:`<div class="field"><textarea id="qn-text" placeholder="Escreve aqui... (Enter para guardar)" autofocus style="min-height:110px"></textarea></div>`,
+    title: isEdit ? 'Editar pensamento' : 'Novo pensamento',
+    bodyHtml:`<div class="field"><label style="display:block;margin-bottom:8px;font-size:13px;color:var(--text-dim);font-weight:500;">Título</label><input type="text" id="qn-title" placeholder="p.e. 'Sobre criatividade'" value="${esc(editNote?.title||'')}" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-family:var(--font-display);font-size:15px;margin-bottom:16px;"/></div><div class="field"><label style="display:block;margin-bottom:8px;font-size:13px;color:var(--text-dim);font-weight:500;">Pensamento</label><textarea id="qn-text" placeholder="Escreve aqui... (Shift+Enter para guardar)" style="min-height:140px;width:100%;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-family:var(--font-body);line-height:1.6;resize:vertical;">${esc(editNote?.content||'')}</textarea></div>`,
     footHtml:`<button class="btn btn-ghost" id="qn-cancel">Cancelar</button><button class="btn btn-primary" id="qn-save">${icon('check',14)} Guardar</button>`,
     onMount:(box)=>{
-      const ta = box.querySelector('#qn-text'); ta.focus();
+      const titleInput = box.querySelector('#qn-title');
+      const ta = box.querySelector('#qn-text');
+      titleInput.focus();
       box.querySelector('#qn-cancel').onclick = closeModal;
       const save = async ()=>{
-        if(!ta.value.trim()) return;
-        await dbInsert('quick_notes', {content:ta.value.trim()});
+        const title = titleInput.value.trim() || 'Pensamento';
+        const content = ta.value.trim();
+        if(!content) return;
+        if(isEdit){
+          await dbUpdate('quick_notes', editNote.id, {title, content});
+        } else {
+          await dbInsert('quick_notes', {title, content});
+        }
         closeModal(); onSaved && onSaved();
       };
       box.querySelector('#qn-save').onclick = save;
-      ta.addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); save(); } });
+      ta.addEventListener('keydown', e=>{ if(e.key==='Enter' && e.shiftKey){ e.preventDefault(); save(); } });
     }
   });
 }
