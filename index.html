@@ -2327,9 +2327,12 @@ VIEW_RENDERERS.habitos = async (wrap)=>{
     wrap.querySelectorAll('[data-habit-toggle]').forEach(b=>b.onclick=async(e)=>{
       e.stopPropagation();
       const today = todayISO();
-      const existing = logs.filter(l=>l.habit_id===b.dataset.habitToggle && l.log_date===today);
+      const habitId = b.dataset.habitToggle;
+      logs = await dbList('habit_logs');
+      const existing = logs.filter(l=>l.habit_id===habitId && l.log_date===today);
       if(existing.length) await dbDelete('habit_logs', existing[0].id);
-      else await dbInsert('habit_logs', {habit_id:b.dataset.habitToggle, log_date:today, completed:true});
+      else await dbInsert('habit_logs', {habit_id:habitId, log_date:today, completed:true});
+      logs = await dbList('habit_logs');
       refresh();
     });
     wrap.querySelectorAll('[data-habit-edit]').forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); openHabitModal(habits.find(h=>h.id===b.dataset.habitEdit), refresh); });
