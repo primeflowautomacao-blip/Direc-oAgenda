@@ -2328,8 +2328,40 @@ VIEW_RENDERERS.habitos = async (wrap)=>{
       e.stopPropagation();
       const today = todayISO();
       const habitId = b.dataset.habitToggle;
+      const habit = habits.find(h=>h.id===habitId);
       logs = await dbList('habit_logs');
       const existing = logs.filter(l=>l.habit_id===habitId && l.log_date===today);
+      
+      // Validar se o hábito pode ser marcado hoje (baseado na frequência)
+      const todayDate = new Date();
+      const dayOfWeek = todayDate.getDay(); // 0 = Domingo, 6 = Sábado
+      
+      let canMark = true;
+      let reason = '';
+      
+      if(habit.frequency_type === 'specific_days' && habit.frequency_data?.days){
+        // Só pode marcar em dias específicos
+        if(!habit.frequency_data.days.includes(dayOfWeek)){
+          canMark = false;
+          reason = 'Este hábito só é para dias específicos da semana.';
+        }
+      }
+      else if(habit.frequency_type === 'weekly_count' && habit.frequency_data?.count){
+        // Verificar se já atingiu o limite esta semana
+        const ws = isoDay(startOfWeek(todayDate));
+        const we = isoDay(addDays(startOfWeek(todayDate), 6));
+        const doneThisWeek = logs.filter(l=>l.habit_id===habitId && l.log_date>=ws && l.log_date<=we).length;
+        if(doneThisWeek >= habit.frequency_data.count && !existing.length){
+          canMark = false;
+          reason = `Já completou ${habit.frequency_data.count}x esta semana. Meta alcançada! ✓`;
+        }
+      }
+      
+      if(!canMark){
+        toast(reason);
+        return;
+      }
+      
       if(existing.length) await dbDelete('habit_logs', existing[0].id);
       else await dbInsert('habit_logs', {habit_id:habitId, log_date:today, completed:true});
       logs = await dbList('habit_logs');
